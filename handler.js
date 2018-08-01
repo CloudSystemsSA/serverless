@@ -514,6 +514,20 @@ const getIndividualTaskById = (id, callback) => {
     });
 };
 
+const getGroupById = (id, callback) => {
+  const scanParams = {
+    TableName: 'groups',
+    KeyConditionExpression: 'id = :id',
+    ExpressionAttributeValues: {
+      ':id': id,
+    },
+  };
+  DynamoDB.query(scanParams, (error, result) => {
+    console.log('getGroupById error', error);
+    return (error || result.Count == 0) ? callback(null) : callback(result.Items[0]);
+  });
+};
+
 module.exports.notifyWhenIndividualTaskCreated = (event, context, callback) => {
   const id = event.id;
   console.log('notifyWhenIndividualTaskCreated', id);
@@ -880,6 +894,57 @@ const getGroupTaskById = (id, callback) => {
     });
 };
 
+const changeGroupLeader = (id, callback) => {
+  getGroupById(id, (group) => {
+    if (!group) return callback('GROUP_CANNOT_BE_FOUND');
+    var leaderIndex = 0;
+    for (var m=0; m<group.members.length; m++) {
+      if (group.members[m].role == 'leader') {
+        leaderIndex = m;
+        break;
+      }
+    }
+
+    if (leaderIndex == group.members.length - 1) {
+      leaderIndex = 0;
+    } else {
+      leaderIndex++;
+    }
+
+    for (var m=0; m<group.members.length; m++) {
+      if (m == leaderIndex) {
+        group.members[m].role = 'leader';
+      } else {
+        group.members[m].role = 'member';
+      }
+    }
+    // Save the new leader details.
+    const timestamp = new Date().getTime();
+    const params = {
+      TableName: 'groups',
+      Key: {
+        id: id,
+      },
+      ExpressionAttributeValues: {
+        ':members': group.members,
+        ':status': [{
+          event: 'leaderChanged',
+          createdAt: timestamp,
+        }],
+        ':updatedAt': timestamp,
+      },
+      UpdateExpression: 'SET members = :members, statuses = list_append(statuses, :status), updatedAt = :updatedAt',
+      ReturnValues: 'ALL_NEW',
+    };
+
+    DynamoDB.update(params, (error, result) => {
+      console.log('error', error);
+      if (error) return callback(error);
+      return callback(null, result);
+    });
+  });
+};
+
 const notifyWhenGroupTaskCreated = (id, callback) => {
 
   getGroupTaskById(id, (groupTask) => {
@@ -960,9 +1025,12 @@ const notifyWhenGroupTaskCreated = (id, callback) => {
       DynamoDB.update(params, (error, result) => {
         console.log('error when updating db', error);
         if (error) return callback('CANNOT_UPDATE_DATABASE');
-        return callback(null, {
-          id: id,
-          expiresAfterInSeconds: groupTask.expiresAfter*60, // TODO: Convert to seconds: groupTask.expiresAfter*60*60.
+        changeGroupLeader(groupTask.groupId, (error, success) => {
+          if (error) callback(error);
+          return callback(null, {
+            id: id,
+            expiresAfterInSeconds: groupTask.expiresAfter*60, // TODO: Convert to seconds: groupTask.expiresAfter*60*60.
+          });
         });
       });
     });
@@ -1774,7 +1842,7 @@ module.exports.createIndividualTask = (event, context, callback) => {
   }
 
   const mentorEmails = mentorsString.split(',').map(function(item) {
-    return item.trim();
+    return item.trim().toLowerCase();
   });
 
   console.log('referencesString', referencesString);
@@ -2011,7 +2079,7 @@ const collectTraineesData = (callback) => {
     // console.log(individualTasks);
     listTrainees((trainees) => {
       trainees = trainees.filter((trainee) => {
-        return trainee.currentStatus == 'accepted' /*&& trainee.email.indexOf('yopmail') < 0*/; // TODO:
+        return trainee.currentStatus == 'accepted' && trainee.email.indexOf('yopmail') < 0; // TODO:
       });
       for (var i = trainees.length - 1; i >= 0; i--) {
         const trainee = trainees[i];
@@ -2411,7 +2479,8 @@ const createGroupTasks = (createdById, title, feedback, description, references,
         })).then((success) => {
           return callback(null, success);
         }).catch((error) => {
-          return callback(error);
+          console.log('error', error);
+          return callback('GONE');
         });
     });
   });
@@ -2448,7 +2517,7 @@ module.exports.createGroupTasks = (event, context, callback) => {
 
   // Make some variables.
   mentorEmails = mentorEmails.map(function(item) {
-    return item.toLowerCase();
+    return item.trim().toLowerCase();
   });
 
   // return callback(null, makeResponse(404));
@@ -2459,7 +2528,14 @@ module.exports.createGroupTasks = (event, context, callback) => {
   createGroupTasks(
     createdById, title, feedback, description, references, mentorEmails, skills, publicChannel, expiresAfter,
     (error, success) => {
-      if (error) callback(null, makeResponse(408));
+      if (error) {
+        if (error == 'NO_MENTORS_FOUND' || error == 'NO_MENTORS_FOUND') {
+          return callback(null, makeResponse(400));
+        }
+        if (error == 'GONE') {
+          return callback(null, makeResponse(408));
+        }
+      }
       callback(null, makeResponse(201));
     }
   );
