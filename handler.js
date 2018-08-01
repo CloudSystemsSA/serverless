@@ -2529,7 +2529,7 @@ module.exports.createGroupTasks = (event, context, callback) => {
     createdById, title, feedback, description, references, mentorEmails, skills, publicChannel, expiresAfter,
     (error, success) => {
       if (error) {
-        if (error == 'NO_MENTORS_FOUND' || error == 'NO_MENTORS_FOUND') {
+        if (error == 'NO_MENTORS_FOUND' || error == 'NO_GROUPS_FOUND') {
           return callback(null, makeResponse(400));
         }
         if (error == 'GONE') {
