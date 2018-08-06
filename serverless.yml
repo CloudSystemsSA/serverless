@@ -184,6 +184,13 @@ functions:
           method: post
           cors: true
           authorizer: authContributor
+  getGroupTask:
+    handler: handler.getGroupTask
+    events:
+      - http:
+          path: group-tasks
+          method: get
+          cors: true
 
   authTraineeInfo:
     handler: handler.authTraineeInfo

@@ -333,7 +333,7 @@ module.exports.notifyWhenTraineeApplies = (event, context, callback) => {
         if (!trainee) return callback(new Error('Trainee does not exist.'));
         var destinations = [];
         for (var i = contributors.length - 1; i >= 0; i--) {
-          const voteUrl = `https://cloudsystems.sa/vote.html?accessToken=${contributors[i].accessToken}&traineeId=${trainee.id}`;
+          const voteUrl = `https://cloudsystems.sa/vote?accessToken=${contributors[i].accessToken}&traineeId=${trainee.id}`;
           destinations.push({
             Destination: {
               ToAddresses: [contributors[i].email],
@@ -881,17 +881,17 @@ module.exports.correctIndividualTask = (event, context, callback) => {
 }
 
 const getGroupTaskById = (id, callback) => {
-    const scanParams = {
-      TableName: 'groupTasks',
-      KeyConditionExpression: 'id = :id',
-      ExpressionAttributeValues: {
-        ':id': id,
-      },
-    };
-    DynamoDB.query(scanParams, (error, result) => {
-      console.log('getGroupTaskById error', error);
-      return (error || result.Count == 0) ? callback(null) : callback(result.Items[0]);
-    });
+  const scanParams = {
+    TableName: 'groupTasks',
+    KeyConditionExpression: 'id = :id',
+    ExpressionAttributeValues: {
+      ':id': id,
+    },
+  };
+  DynamoDB.query(scanParams, (error, result) => {
+    console.log('getGroupTaskById error', error);
+    return (error || result.Count == 0) ? callback(null) : callback(result.Items[0]);
+  });
 };
 
 const changeGroupLeader = (id, callback) => {
@@ -1029,7 +1029,7 @@ const notifyWhenGroupTaskCreated = (id, callback) => {
           if (error) callback(error);
           return callback(null, {
             id: id,
-            expiresAfterInSeconds: groupTask.expiresAfter*60, // TODO: Convert to seconds: groupTask.expiresAfter*60*60.
+            expiresAfterInSeconds: groupTask.expiresAfter*60*60, // TODO: Convert to seconds: groupTask.expiresAfter*60*60.
           });
         });
       });
@@ -1314,6 +1314,14 @@ module.exports.notifyWhenGroupTaskExpired = (event, context, callback) => {
   console.log('notifyWhenGroupTaskExpired event', event);
   console.log('notifyWhenGroupTaskExpired context', context);
   notifyWhenGroupTaskExpired(id, callback);
+}
+
+module.exports.getGroupTask = (event, context, callback) => {
+  const id = event.queryStringParameters ? event.queryStringParameters.id : null;
+  getGroupTaskById(id, (group) => {
+    if (!group) return callback(null, makeResponse(404));
+    return callback(null, makeResponse(200, group));
+  });
 }
 
 module.exports.deliverGroupTask = (event, context, callback) => {
@@ -2072,6 +2080,15 @@ const listIndividualTasks = (individualTasks) => {
   DynamoDB.scan(scanParams, onScan);
 };
 
+// listIndividualTasks((individualTasks) => {
+//   individualTasks = individualTasks.filter((individualTask) => {
+//     return individualTask.assignedTo.id == 'e03e246a-0b4c-4a85-bad8-73a2867a0b3f' && individualTask.currentStatus == 'expired';
+//   });
+//   individualTasks.map((individualTask) => {
+//     console.log(individualTask.id);
+//   });
+// });
+
 const collectTraineesData = (callback) => {
   let data = [];
   console.log('collectTraineesData');
@@ -2079,7 +2096,7 @@ const collectTraineesData = (callback) => {
     // console.log(individualTasks);
     listTrainees((trainees) => {
       trainees = trainees.filter((trainee) => {
-        return trainee.currentStatus == 'accepted' && trainee.email.indexOf('yopmail') < 0; // TODO:
+        return trainee.currentStatus == 'accepted' && trainee.email.indexOf('yopmail') < 0;
       });
       for (var i = trainees.length - 1; i >= 0; i--) {
         const trainee = trainees[i];
@@ -2203,9 +2220,10 @@ const getBestGroup = (groups, membersCount) => {
 const groupifyTrainees = (callback) => {
   collectTraineesData((data) => {
 
-    data = data.filter((item) => {
-      return item.email.indexOf('yopmail') >= 0;
-    });
+    // For testing.
+    // data = data.filter((item) => {
+    //   return item.email.indexOf('yopmail') >= 0;
+    // });
 
     data = data.sort((a, b) => {
       return b.accepted - a.accepted;
